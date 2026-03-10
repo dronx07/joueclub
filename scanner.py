@@ -38,7 +38,7 @@ async def fetch_cookies() -> tuple:
                 text = await response.text()
                 data = json.loads(text)
                 logger.info(f"Fetched cookies JSON.")
-                return data["amazon"], data["seller"], data["sas"]
+                return data["set3"]["amazon"], data["set3"]["seller"], data["sas"]
     except Exception as e:
         logger.error(f"Failed to fetch cookies JSON: {e}.")
     return None,None,None
