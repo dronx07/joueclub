@@ -2,34 +2,38 @@
 
 from typing import Optional
 import os
+import asyncio
 from dotenv import load_dotenv
 from curl_cffi.requests import AsyncSession
 from .logger import get_logger
-
-load_dotenv()
 
 logger = get_logger("Requester")
 
 
 class Requester:
-    def __init__(self, url: str, referrer: str, cookie: Optional[str] = None, api: Optional[bool] = False):
+    def __init__(self, url: str, referrer: Optional[str] = None, cookie: Optional[str] = None, api: Optional[bool] = False, timeout: int = 10):
         self.url = url
         self.session: Optional[AsyncSession] = None
         self.headers = {
             "Accept": "application/json" if api else "*/*",
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36",
-            "Cookie": cookie if cookie else "",
-            "Referer": referrer if referrer else "",
         }
+        if cookie:
+            self.headers["Cookie"] = cookie
+        if referrer:
+            self.headers["Referer"] = referrer
+
         self.proxy = os.getenv("PROXY")
+        self.timeout = timeout
 
     async def __aenter__(self):
-        extra_params = {"timeout": 30, "allow_redirects": True, "http_version": "v2"}
         self.session = AsyncSession(
             headers=self.headers,
             proxy=self.proxy,
             impersonate="chrome142",
-            **extra_params
+            timeout=self.timeout,
+            allow_redirects=True,
+            http_version="v2"
         )
         return self
 
@@ -37,22 +41,28 @@ class Requester:
         if self.session:
             await self.session.close()
 
-    async def fetch_get(self, retries: int = 3):
-        for _ in range(retries):
+    async def fetch_get(self, retries: int = 3, delay: float = 1.0):
+        for attempt in range(1, retries + 1):
             try:
                 response = await self.session.get(self.url)
+                response.raise_for_status()
                 return response
             except Exception as e:
-                logger.error(e)
-                continue
+                logger.warning(f"GET request failed (attempt {attempt}/{retries}) for URL {self.url}: {e}")
+                if attempt < retries:
+                    await asyncio.sleep(delay)
+        logger.error(f"GET request failed after {retries} attempts for URL {self.url}")
         return None
 
-    async def fetch_post(self, data: dict, retries: int = 3):
-        for _ in range(retries):
+    async def fetch_post(self, data: dict, retries: int = 3, delay: float = 1.0):
+        for attempt in range(1, retries + 1):
             try:
                 response = await self.session.post(self.url, json=data)
+                response.raise_for_status()
                 return response
             except Exception as e:
-                logger.error(e)
-                continue
+                logger.warning(f"POST request failed (attempt {attempt}/{retries}) for URL {self.url}: {e}")
+                if attempt < retries:
+                    await asyncio.sleep(delay)
+        logger.error(f"POST request failed after {retries} attempts for URL {self.url}")
         return None
